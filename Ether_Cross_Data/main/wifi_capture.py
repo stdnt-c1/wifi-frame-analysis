@@ -1,142 +1,106 @@
-#!/usr/bin/env python3
-"""
-Ubuntu WiFi Frame Capture Script
-Captures 802.11 frames in monitor mode and streams them to Windows display
-"""
-
-from scapy.all import *
-import socket
+import os
+import time
+import threading
+from scapy.all import sniff
 import json
 from datetime import datetime
-import argparse
+from scapy.layers.dot11 import Dot11, Dot11Beacon, Dot11ProbeReq, Dot11ProbeResp, Dot11Auth, Dot11AssoReq, Dot11AssoResp, Dot11ReassoReq, Dot11ReassoResp, Dot11Disas, Dot11Deauth, Dot11Action
 
 class WifiCapture:
-    def __init__(self, iface, server_ip, server_port=5000):
+    def __init__(self, iface, log_file=None, filter_type=None):
         self.iface = iface
-        self.server_ip = server_ip
-        self.server_port = server_port
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket = None
+        self.log_file = log_file
+        self.filter_type = filter_type
         self.stats = {
             'BEACON': 0, 'PROBE_REQ': 0, 'PROBE_RES': 0,
             'AUTH': 0, 'ASSOC_REQ': 0, 'ASSOC_RES': 0,
             'REASSOC_REQ': 0, 'REASSOC_RES': 0,
             'DISASSOC': 0, 'DEAUTH': 0, 'ACTION': 0
         }
-        
-    def start_server(self):
-        """Start TCP server for streaming data"""
-        self.socket.bind((self.server_ip, self.server_port))
-        self.socket.listen(1)
-        print(f"Waiting for connection on {self.server_ip}:{self.server_port}")
-        self.client, addr = self.socket.accept()
-        print(f"Connected to {addr}")
-        # Send initial connection message
-        self.send_data("START|")
 
-    def send_data(self, data):
-        """Send data to the Windows client"""
-        try:
-            self.client.send((data + '\n').encode())
-        except:
-            print("Error sending data, attempting to reconnect...")
-            self.start_server()
+    def channel_hopper(self):
+        """Hop through WiFi channels to capture frames on all channels"""
+        while True:
+            for channel in range(1, 14):
+                os.system(f"iwconfig {self.iface} channel {channel}")
+                time.sleep(0.5)  # Adjust delay as needed
 
-    def send_stats(self):
-        """Send current statistics"""
-        stats_str = 'STATS|' + ','.join(str(v) for v in self.stats.values())
-        self.send_data(stats_str)
-
-    def get_frame_type(self, pkt):
-        """Determine 802.11 frame type"""
-        if pkt.haslayer(Dot11Beacon):
-            self.stats['BEACON'] += 1
-            return 'BEACON'
-        elif pkt.haslayer(Dot11ProbeReq):
-            self.stats['PROBE_REQ'] += 1
-            return 'PROBE_REQ'
-        elif pkt.haslayer(Dot11ProbeResp):
-            self.stats['PROBE_RES'] += 1
-            return 'PROBE_RES'
-        elif pkt.haslayer(Dot11Auth):
-            self.stats['AUTH'] += 1
-            return 'AUTH'
-        elif pkt.haslayer(Dot11AssoReq):
-            self.stats['ASSOC_REQ'] += 1
-            return 'ASSOC_REQ'
-        elif pkt.haslayer(Dot11AssoResp):
-            self.stats['ASSOC_RES'] += 1
-            return 'ASSOC_RES'
-        elif pkt.haslayer(Dot11ReassoReq):
-            self.stats['REASSOC_REQ'] += 1
-            return 'REASSOC_REQ'
-        elif pkt.haslayer(Dot11ReassoResp):
-            self.stats['REASSOC_RES'] += 1
-            return 'REASSOC_RES'
-        elif pkt.haslayer(Dot11Disas):
-            self.stats['DISASSOC'] += 1
-            return 'DISASSOC'
-        elif pkt.haslayer(Dot11Deauth):
-            self.stats['DEAUTH'] += 1
-            return 'DEAUTH'
-        elif pkt.haslayer(Dot11Action):
-            self.stats['ACTION'] += 1
-            return 'ACTION'
-        return None
-
-    def packet_handler(self, pkt):
-        """Process captured packets"""
-        if not pkt.haslayer(Dot11):
+    def packet_handler(self, packet):
+        """Handle captured packets"""
+        if not packet.haslayer(Dot11):
             return
 
-        frame_type = self.get_frame_type(pkt)
+        frame_type = self.get_frame_type(packet)
         if not frame_type:
             return
 
-        # Extract basic frame information
+        # Update statistics
+        self.stats[frame_type] += 1
+
+        # Extract packet details
         frame_info = {
             'type': frame_type,
-            'src': pkt.addr2 if pkt.addr2 else 'N/A',
-            'dst': pkt.addr1 if pkt.addr1 else 'N/A',
-            'rssi': pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else 'N/A'
+            'src': packet.addr2 if packet.addr2 else 'N/A',
+            'dst': packet.addr1 if packet.addr1 else 'N/A',
+            'rssi': packet.dBm_AntSignal if hasattr(packet, 'dBm_AntSignal') else 'N/A',
+            'timestamp': datetime.now().isoformat()
         }
 
-        # Extract SSID from beacons and probe responses
-        if frame_type in ['BEACON', 'PROBE_RES']:
-            if pkt.haslayer(Dot11Elt) and pkt[Dot11Elt].ID == 0:
-                frame_info['SSID'] = pkt[Dot11Elt].info.decode(errors='replace')
+        # Filter packets if a filter is set
+        if self.filter_type and frame_info['type'] != self.filter_type:
+            return
 
-        # Format frame data
-        frame_str = f"[{frame_type}] "
-        frame_str += ' '.join(f"{k}:{v}" for k, v in frame_info.items())
-        
-        # Send frame data
-        self.send_data(frame_str)
-        
-        # Send updated stats every 10 frames
-        if sum(self.stats.values()) % 10 == 0:
-            self.send_stats()
+        # Log packet to file
+        if self.log_file:
+            with open(self.log_file, 'a') as f:
+                f.write(json.dumps(frame_info) + '\n')
+
+        # Print packet details
+        print(frame_info)
+
+    def get_frame_type(self, packet):
+        """Determine 802.11 frame type"""
+        if packet.haslayer(Dot11Beacon):
+            return 'BEACON'
+        elif packet.haslayer(Dot11ProbeReq):
+            return 'PROBE_REQ'
+        elif packet.haslayer(Dot11ProbeResp):
+            return 'PROBE_RES'
+        elif packet.haslayer(Dot11Auth):
+            return 'AUTH'
+        elif packet.haslayer(Dot11AssoReq):
+            return 'ASSOC_REQ'
+        elif packet.haslayer(Dot11AssoResp):
+            return 'ASSOC_RES'
+        elif packet.haslayer(Dot11ReassoReq):
+            return 'REASSOC_REQ'
+        elif packet.haslayer(Dot11ReassoResp):
+            return 'REASSOC_RES'
+        elif packet.haslayer(Dot11Disas):
+            return 'DISASSOC'
+        elif packet.haslayer(Dot11Deauth):
+            return 'DEAUTH'
+        elif packet.haslayer(Dot11Action):
+            return 'ACTION'
+        return None
+
+    def print_summary(self):
+        """Print a summary of captured packets"""
+        print("\nPacket Capture Summary:")
+        for frame_type, count in self.stats.items():
+            print(f"{frame_type}: {count}")
 
     def start_capture(self):
-        """Start capturing packets"""
+        """Start capturing packets with channel hopping"""
         try:
             print(f"Starting capture on interface {self.iface}")
+            hopper_thread = threading.Thread(target=self.channel_hopper, daemon=True)
+            hopper_thread.start()
             sniff(iface=self.iface, prn=self.packet_handler, store=0)
         except Exception as e:
             print(f"Error during capture: {e}")
         finally:
-            self.socket.close()
-
-def main():
-    parser = argparse.ArgumentParser(description='Ubuntu WiFi Frame Capture')
-    parser.add_argument('interface', help='Wireless interface in monitor mode')
-    parser.add_argument('--ip', default='0.0.0.0', help='IP address to bind server (default: 0.0.0.0)')
-    parser.add_argument('--port', type=int, default=5000, help='Port to bind server (default: 5000)')
-    
-    args = parser.parse_args()
-    
-    capture = WifiCapture(args.interface, args.ip, args.port)
-    capture.start_server()
-    capture.start_capture()
-
-if __name__ == '__main__':
-    main()
+            if self.socket:
+                self.socket.close()
+            self.print_summary()

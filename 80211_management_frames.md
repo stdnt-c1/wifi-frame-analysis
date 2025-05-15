@@ -30,21 +30,80 @@ uint8_t authPacket[26] = {
 
 ---
 
-## ❌ 2. Deauthentication Frame
+## Updated Authentication Frame Structure (2025)
 
-Sent to forcibly disconnect clients from the AP.
+## Total Frame Size: 38 bytes
 
-```cpp
-uint8_t deauthPacket[26] = {
-  0xC0, 0x00, // Frame Control: Deauth (Subtype: 12)
-  0x00, 0x00,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,
-  0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,
-  0x00, 0x00,
-  0x07, 0x00  // Reason Code: 7 (Class 3 frame received from nonassociated STA)
-};
+### 1. RadioTap Header (8 bytes)
 ```
++------------------+----------------+----------------------+
+| Field            | Size (bytes)   | Value (Hex)         |
++------------------+----------------+----------------------+
+| Version          | 1             | 0x00                |
+| Pad             | 1             | 0x00                |
+| Length          | 2             | 0x08 0x00           |
+| Present flags   | 4             | 0x00 0x00 0x00 0x00 |
+```
+
+### 2. 802.11 Header (24 bytes)
+```
++------------------+----------------+--------------------------------+
+| Field            | Size (bytes)   | Value (Hex) + Description     |
++------------------+----------------+--------------------------------+
+| Frame Control    | 2             | 0xB0 0x00 (Auth frame)        |
+| Duration         | 2             | 0x3A 0x01 (314us)             |
+| Address 1        | 6             | Destination (usually broadcast) |
+| Address 2        | 6             | Source MAC (ESP MAC)           |
+| Address 3        | 6             | BSSID (ESP MAC)               |
+| Sequence Control | 2             | 0x00 0x00                     |
+```
+
+### 3. Authentication Body (6 bytes)
+```
++------------------+----------------+--------------------------------+
+| Field            | Size (bytes)   | Value (Hex) + Description     |
++------------------+----------------+--------------------------------+
+| Auth Algorithm   | 2             | 0x00 0x00 (Open System)       |
+| Auth Sequence    | 2             | 0x01 0x00 (First frame)       |
+| Status Code      | 2             | 0x00 0x00 (Success)           |
+```
+
+### Important Notes:
+1. The RadioTap header is minimized to 8 bytes to reduce complexity
+2. Duration field is set to 314us (0x013A) as a standard value
+3. MAC addresses must be properly copied after header offset (RadioTap length)
+4. Packet must be exactly 38 bytes for proper transmission
+
+---
+
+## ❌ 2. Deauthentication Frame (Updated)
+
+| Field               | Bytes | Value (Hex) | Description                              |
+|---------------------|-------|-------------|------------------------------------------|
+| RadioTap Header     | 12    | See below   | Contains metadata for transmission       |
+| Frame Control       | 2     | `C0 00`     | Deauthentication frame                  |
+| Duration/ID         | 2     | `00 00`     | Typically 0                              |
+| Address 1 (Dest)    | 6     | `FF FF FF FF FF FF` | Broadcast                               |
+| Address 2 (Source)  | 6     | `AA BB CC DD EE FF` | Source MAC (ESP MAC)                   |
+| Address 3 (BSSID)   | 6     | `AA BB CC DD EE FF` | BSSID (ESP MAC)                        |
+| Sequence Control    | 2     | `00 00`     | Sequence number                          |
+| Frame Body          | 2     | `07 00`     | Reason Code (7: Class 3 frame received)  |
+
+#### RadioTap Header Details
+
+| Field               | Bytes | Value (Hex) | Description                              |
+|---------------------|-------|-------------|------------------------------------------|
+| Version + Pad       | 2     | `00 00`     | Version and padding                     |
+| Length              | 2     | `0C 00`     | Total length of the RadioTap header     |
+| Present Flags       | 4     | `04 80 00 00` | Indicates which fields are present     |
+| Rate                | 2     | `02 00`     | Transmission rate (1 Mbps)              |
+| TX Flags            | 2     | `18 00`     | Transmission flags                      |
+
+### Notes
+
+- The deauthentication packet now includes a RadioTap header for proper transmission.
+- The ESP8266's MAC address is dynamically inserted into the packet for both the source and BSSID fields.
+- The refined structure ensures compatibility with the `wifi_send_pkt_freedom` function.
 
 ---
 

@@ -1,33 +1,54 @@
-#include <ESP8266WiFi.h>
-extern "C" {
-  #include "user_interface.h"
-}
+#include "../ESP8266_80211.h"
 
-uint8_t authPacket_simplified[26] = {
-  0xB0, 0x00, // Frame Control: Authentication (Type 0, Subtype 11) - Little Endian
-  0x00, 0x00, // Duration/ID (typically 0 in these frames)
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,  // Address 1: Destination (Broadcast)
-  0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,  // Address 2: Source (Your ESP's MAC or spoofed)
-  0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,  // Address 3: BSSID (AP's MAC or spoofed)
-  0x00, 0x00, // Sequence Control (usually managed by hardware, but part of header)
-  0x00, 0x00  // Authentication Algorithm Number (0 for Open System)
-};
+// Create instance of the helper class
+ESP8266_80211 wifi80211(1);  // Initialize with channel 1
+
+// Buffer for the authentication frame
+uint8_t authPacket[AUTH_FRAME_LEN];
 
 void setup() {
   Serial.begin(115200);
-  WiFi.mode(WIFI_STA);  // Set WiFi to station mode
-  wifi_set_opmode(STATION_MODE); // Set operation mode to station
-  wifi_set_channel(1); // Set the channel
-  Serial.println("Sending Authentication frames...");
+  delay(1000);  // Wait for serial to initialize
+
+  if (!wifi80211.begin()) {
+    Serial.println("Failed to initialize WiFi!");
+    while(1) delay(1000);
+  }
+
+  // Create the authentication frame
+  wifi80211.createAuthenticationFrame(authPacket);
+  
+  Serial.println("Setup complete, sending Authentication frames...");
 }
 
 void loop() {
-  // Send the raw authentication packet
-  int result = wifi_send_pkt_freedom(authPacket_simplified, sizeof(authPacket_simplified), 0);
-
+  // Always (re)build the frame before sending
+  wifi80211.createAuthenticationFrame(authPacket);
+  int result = wifi_send_pkt_freedom(authPacket, sizeof(authPacket), 0);
   if (result != 0) {
-    Serial.printf("Failed to send Authentication packet, error: %d\n", result);
+    Serial.printf("Failed to send packet. Error: %d\n", result);
+    for (unsigned int i = 0; i < sizeof(authPacket); i++) {
+      Serial.printf("%02X ", authPacket[i]);
+    }
+    Serial.println();
+    switch(result) {
+      case -1:
+        Serial.println("Error: Invalid packet length or null pointer");
+        break;
+      case -2:
+        Serial.println("Error: Packet too long");
+        break;
+      case -3:
+        Serial.println("Error: Busy, previous packet not finished");
+        break;
+      case -4:
+        Serial.println("Error: Invalid arguments");
+        break;
+      default:
+        Serial.println("Error: Unknown error");
+    }
+  } else {
+    Serial.println("Successfully sent packet");
   }
-
-  delay(10); // Control the sending rate
+  delay(50);  // 50ms delay between packets
 }

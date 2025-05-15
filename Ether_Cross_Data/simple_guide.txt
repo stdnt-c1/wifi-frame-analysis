@@ -1,0 +1,66 @@
+To achieve real-time communication between two computers over a direct Ethernet connection, you can use various methods:
+
+## Method 1: Socket Programming
+1. Create a server: Use a server-side script (e.g., Python's socket library) to listen for incoming connections.
+2. Create a client: Use a client-side script to connect to the server and receive data.
+
+## Method 2: TCP/IP Communication
+1. Establish a connection: Use TCP/IP protocol to establish a connection between the two computers.
+2. Send and receive data: Use sockets or libraries like twisted or scapy to send and receive data.
+
+## Python Example
+Here's a simple example using Python's socket library:
+
+### Server-side code (processing computer)
+
+import socket
+
+# Create a socket object
+server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+# Bind the socket to a specific IP and port
+server_socket.bind(('192.168.1.1', 12345))
+
+# Listen for incoming connections
+server_socket.listen(1)
+
+print("Server listening...")
+
+while True:
+    # Accept incoming connections
+    client_socket, address = server_socket.accept()
+    print("Connected to", address)
+
+    # Send data to the client
+    data = "Processing..."
+    client_socket.sendall(data.encode())
+
+    # Close the connection
+    client_socket.close()
+
+
+### Client-side code (display computer)
+
+import socket
+
+# Create a socket object
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+# Connect to the server
+client_socket.connect(('192.168.1.1', 12345))
+
+# Receive data from the server
+data = client_socket.recv(1024).decode()
+print("Received:", data)
+
+# Close the connection
+client_socket.close()
+
+
+## Real-time Display
+To achieve real-time display, you can use techniques like:
+
+- Streaming: Send data in small chunks, and display it on the client-side as it's received.
+- WebSockets: Use WebSockets to establish a bi-directional communication channel between the server and client.
+
+By using these methods, you can create a real-time display system where one computer processes data and sends it to another computer for display over a direct Ethernet connection [1].

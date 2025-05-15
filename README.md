@@ -13,11 +13,15 @@ A comprehensive suite of tools for capturing, analyzing, and displaying 802.11 m
 │   └── 8266D1_DEAUTH_JAM.ino     # ESP8266 Deauthentication frame generator
 └── Ether_Cross_Data/
     ├── simple_guide.txt          # Guide for direct ethernet connection
-    └── ex/
-        ├── 8266_80211_CHECK.ino  # ESP8266 frame analyzer example
+    ├── ex/
+    |   ├── 8266_80211_CHECK.ino  # ESP8266 frame analyzer example
+    |   ├── display_frames.py     # Serial-based frame display
+    |   ├── display_frames_net.py # Network-based frame display
+    |   └── wifi_capture.py       # Ubuntu frame capture script
+    └── main/
         ├── display_frames.py     # Serial-based frame display
         ├── display_frames_net.py # Network-based frame display
-        └── wifi_capture.py      # Ubuntu frame capture script
+        └── wifi_capture.py       # Ubuntu frame capture script
 ```
 
 ## Components
